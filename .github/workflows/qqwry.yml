@@ -8,6 +8,7 @@ on:
       - main
     paths-ignore:
       - 'README.md'
+      - '.github/workflows/update.yml'
 env:
   innoextract_version: 1.9
   arch: amd64

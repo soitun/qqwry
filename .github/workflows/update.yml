@@ -1,0 +1,114 @@
+name: Download and Update dat File
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '55 9,15 * * *'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - '.github/workflows/qqwry.yml'
+
+env:
+  FILE_URL: ${{ secrets.DAT_FILE_URL }} 
+
+jobs:
+  update-dat-file:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download dat file
+        run: |
+          echo "Starting to download the dat file..."
+          wget -O new_qqwry.dat "${{ env.FILE_URL }}"
+          if [ $? -eq 0 ]; then
+            echo "File downloaded successfully."
+          else
+            echo "File download failed."
+            exit 1
+          fi
+          ls -lh new_qqwry.dat  
+
+      - name: Calculate new file hash
+        id: calculate_new_hash
+        run: |
+          if [ -f new_qqwry.dat ]; then
+            echo "Calculating hash for new_qqwry.dat..."
+            NEW_HASH=$(sha256sum new_qqwry.dat | awk '{ print $1 }')
+            echo "NEW_HASH=${NEW_HASH}" >> $GITHUB_ENV
+            echo "New file hash: ${NEW_HASH}"
+          else
+            echo "Error: new_qqwry.dat not found."
+            exit 1
+          fi
+
+      - name: Calculate repository file hash
+        id: calculate_repo_hash
+        run: |
+          echo "Calculating hash for the repository file..."
+          REPO_HASH=$(git show main:qqwry.dat | sha256sum | awk '{ print $1 }')
+          echo "REPO_HASH=${REPO_HASH}" >> $GITHUB_ENV
+          echo "Repository file hash: ${REPO_HASH}"
+
+      - name: Compare file hashes
+        id: compare_hashes
+        run: |
+          if [ "${{ env.NEW_HASH }}" != "${{ env.REPO_HASH }}" ]; then
+            echo "File has changed."
+            echo "FILE_CHANGED=true" >> $GITHUB_ENV
+          else
+            echo "File has not changed."
+          fi
+
+      - name: Check if tag exists
+        run: |
+          git fetch --tags
+          echo "Value of dat_date: ${{ env.dat_date }}"
+          if git rev-parse ${{ env.dat_date }} >/dev/null 2>&1; then
+            echo "Tag already exists, skipping create release"
+            echo "TAG_EXISTS=true" >> $GITHUB_ENV
+          fi
+      
+      - name: Replace dat file
+        if: steps.compare_hashes.outputs.FILE_CHANGED == 'true'
+        run: |
+          echo "Replacing old dat file with new one..."
+          mv new_qqwry.dat qqwry.dat
+
+      - name: Commit and push changes
+        if: steps.compare_hashes.outputs.FILE_CHANGED == 'true'
+        run: |
+          echo "Configuring Git..."
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add qqwry.dat
+          git commit -m "Update qqwry.dat on $(date +'%Y-%m-%d')"
+          git push origin main
+
+      - name: Create a new release
+        if: steps.compare_hashes.outputs.FILE_CHANGED == 'true' && env.TAG_EXISTS != 'true'
+        uses: FW27623/release@v1
+        with:
+          commit: ${{ env.GITHUB_SHA }}
+          tag: ${{ env.dat_date }}
+          token: ${{ secrets.qqwry }}
+          artifacts: qqwry.dat
+          body: |
+           #### qqwry.dat
+
+           | Name               | Value                      |
+           | :----------------: | :------------------------: |
+           | Zip Download link: | https://raw.githubusercontent.com/FW27623/qqwry/main/qqwry.dat |
+           | File hash:         | qqwry.dat: ${{ env.NEW_HASH }} |
+
+           <p align="right"><code>Version: ${{ env.NEW_HASH }} </code></p>
