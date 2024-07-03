@@ -2,7 +2,7 @@ name: qqwry
 on:
   workflow_dispatch:
   schedule:
-    - cron: '55 9,15 * * *'
+    - cron: '55 15 * * *'
 env:
   innoextract_version: 1.9
   arch: amd64
